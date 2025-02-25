@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circles Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #333;
+            font-family: Arial, sans-serif;
+        }
+        
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // Constants
+        const INITIAL_CIRCLES = 1000;
+        const CIRCLE_SPEED = 100; // pixels per second
+        const LIFE_SPAN = 10000; // 10 seconds in milliseconds
+        const WHITE_SPAWN_CHANCE = 1.0; // 100% chance
+        const WHITE_SPAWN_INTERVAL = 3000; // 9 seconds
+        const WHITE_DEATH_CHANCE = 0.5; // 50% chance when whites collide
+
+        // Circle types with corresponding sizes (Fibonacci) and colors
+        const CIRCLE_TYPES = [
+            { size: 2, color: 'red' },
+            { size: 3, color: 'orange' },
+            { size: 5, color: 'yellow' },
+            { size: 8, color: 'green' },
+            { size: 13, color: 'blue' },
+            { size: 21, color: 'purple' },
+            { size: 34, color: 'white' }
+        ];
+
+        // Game setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let circles = [];
+        let lastTime = 0;
+        let lastSpawnTime = 0;
+        
+        // Resize canvas to fill window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Circle class
+        class Circle {
+            constructor(x, y, typeIndex) {
+                this.x = x || Math.random() * canvas.width;
+                this.y = y || Math.random() * canvas.height;
+                this.typeIndex = typeIndex !== undefined ? typeIndex : Math.floor(Math.random() * CIRCLE_TYPES.length);
+                this.size = CIRCLE_TYPES[this.typeIndex].size;
+                this.color = CIRCLE_TYPES[this.typeIndex].color;
+                this.dx = (Math.random() * 2 - 1) * CIRCLE_SPEED / 60;
+                this.dy = (Math.random() * 2 - 1) * CIRCLE_SPEED / 60;
+                this.lastEaten = Date.now();
+            }
+
+            update() {
+                // Move the circle
+                this.x += this.dx;
+                this.y += this.dy;
+                
+                // Bounce off the walls
+                if (this.x < this.size || this.x > canvas.width - this.size) {
+                    this.dx = -this.dx;
+                    this.x = Math.max(this.size, Math.min(canvas.width - this.size, this.x));
+                }
+                if (this.y < this.size || this.y > canvas.height - this.size) {
+                    this.dy = -this.dy;
+                    this.y = Math.max(this.size, Math.min(canvas.height - this.size, this.y));
+                }
+                
+                // Check if circle has lived too long without eating
+                if (Date.now() - this.lastEaten > LIFE_SPAN) {
+                    return false; // Circle dies
+                }
+                
+                return true; // Circle lives
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            checkCollision(otherCircle) {
+                const dx = this.x - otherCircle.x;
+                const dy = this.y - otherCircle.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < this.size + otherCircle.size;
+            }
+
+            evolve() {
+                if (this.typeIndex < CIRCLE_TYPES.length - 1) {
+                    this.typeIndex++;
+                    this.size = CIRCLE_TYPES[this.typeIndex].size;
+                    this.color = CIRCLE_TYPES[this.typeIndex].color;
+                }
+                this.lastEaten = Date.now();
+            }
+
+            spawnCircles() {
+                if (this.typeIndex === CIRCLE_TYPES.length - 1) { // If it's a white circle
+                    if (Math.random() < WHITE_SPAWN_CHANCE) {
+                        const minSpacing = this.size + 5; // Minimum space between parent and new circles
+                        const maxSpacing = this.size + 50; // Maximum space
+                        let newCircles = [];
+                        
+                        // Spawn red circles in cardinal directions (North, East, South, West)
+                        for (let i = 0; i < 4; i++) {
+                            const angle = i * Math.PI / 2; // 0, 90, 180, 270 degrees
+                            const spacing = minSpacing + Math.random() * (maxSpacing - minSpacing);
+                            const newX = this.x + Math.cos(angle) * spacing;
+                            const newY = this.y + Math.sin(angle) * spacing;
+                            
+                            // Ensure new circle is within canvas bounds
+                            if (newX > CIRCLE_TYPES[0].size && newX < canvas.width - CIRCLE_TYPES[0].size &&
+                                newY > CIRCLE_TYPES[0].size && newY < canvas.height - CIRCLE_TYPES[0].size) {
+                                newCircles.push(new Circle(newX, newY, 0)); // Red circle
+                            }
+                        }
+                        
+                        // Add yellow and orange circles at random angles
+                        for (let typeIndex of [1, 2]) { // Orange(1) and Yellow(2)
+                            const angle = Math.random() * Math.PI * 2; // Random angle 0-360
+                            const spacing = minSpacing + Math.random() * (maxSpacing - minSpacing);
+                            const newX = this.x + Math.cos(angle) * spacing;
+                            const newY = this.y + Math.sin(angle) * spacing;
+                            
+                            // Ensure new circle is within canvas bounds
+                            if (newX > CIRCLE_TYPES[typeIndex].size && newX < canvas.width - CIRCLE_TYPES[typeIndex].size &&
+                                newY > CIRCLE_TYPES[typeIndex].size && newY < canvas.height - CIRCLE_TYPES[typeIndex].size) {
+                                newCircles.push(new Circle(newX, newY, typeIndex));
+                            }
+                        }
+                        
+                        return newCircles;
+                    }
+                }
+                return [];
+            }
+        }
+
+        // Initialize game with random circles
+        function initGame() {
+            circles = [];
+            for (let i = 0; i < INITIAL_CIRCLES; i++) {
+                circles.push(new Circle());
+            }
+        }
+
+        // Game loop
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Track circles to add from spawning
+            let newCircles = [];
+            
+            // Check for white circle spawning (every 9 seconds)
+            const currentTime = Date.now();
+            if (currentTime - lastSpawnTime > WHITE_SPAWN_INTERVAL) {
+                lastSpawnTime = currentTime;
+                
+                // Look for white circles to spawn from
+                for (let i = 0; i < circles.length; i++) {
+                    if (circles[i].typeIndex === CIRCLE_TYPES.length - 1) {
+                        const spawnedCircles = circles[i].spawnCircles();
+                        newCircles = newCircles.concat(spawnedCircles);
+                    }
+                }
+            }
+            
+            // Update and draw all circles
+            for (let i = 0; i < circles.length; i++) {
+                if (!circles[i].update()) {
+                    // Remove dead circles
+                    circles.splice(i, 1);
+                    i--;
+                    continue;
+                }
+                
+                circles[i].draw();
+                
+                // Check collisions with other circles
+                for (let j = 0; j < circles.length; j++) {
+                    if (i !== j && circles[i].checkCollision(circles[j])) {
+                        // Special case: white-white collision
+                        if (circles[i].typeIndex === CIRCLE_TYPES.length - 1 && 
+                            circles[j].typeIndex === CIRCLE_TYPES.length - 1) {
+                            
+                            // Each white has 50% chance of dying
+                            let iDies = Math.random() < WHITE_DEATH_CHANCE;
+                            let jDies = Math.random() < WHITE_DEATH_CHANCE;
+                            
+                            if (iDies && jDies) {
+                                // Both die - remove j first then i
+                                circles.splice(j, 1);
+                                circles.splice(i, 1);
+                                i--;
+                                break;
+                            } else if (iDies) {
+                                circles.splice(i, 1);
+                                i--;
+                                break;
+                            } else if (jDies) {
+                                circles.splice(j, 1);
+                                j--;
+                                if (j < i) i--;
+                            }
+                            // If neither dies, nothing happens
+                            continue;
+                        }
+                        
+                        // Normal case: The larger circle "eats" the smaller one
+                        if (circles[i].typeIndex > circles[j].typeIndex) {
+                            circles.splice(j, 1);
+                            if (j < i) i--;
+                            j--;
+                            circles[i].evolve();
+                        } else if (circles[i].typeIndex < circles[j].typeIndex) {
+                            circles.splice(i, 1);
+                            i--;
+                            if (circles[j]) {
+                                circles[j].evolve();
+                            }
+                            break;
+                        }
+                        // If they're the same size but not white, nothing happens
+                    }
+                }
+            }
+            
+            // Add any new circles from spawning
+            circles = circles.concat(newCircles);
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game
+        initGame();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
